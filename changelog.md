@@ -1,3 +1,7 @@
+unreleased
+- warm the FHIR filesystem package cache (~/.fhir) at build time, cutting about 16s off container startup
+  for about 120 MB of image size
+
 1.15.1 2026/08/14
 - matchbox v4.1.13
 - ch.fhir.ig.ch-elm#1.15.1
