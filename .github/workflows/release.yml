@@ -2,6 +2,8 @@ name: Create a release
 
 # Creates the tag and the GitHub release for a version with the notes of that version from changelog.md, then starts
 # the Docker image workflow on the new tag.
+# Runs by hand with a version, or on a push to main that changes changelog.md: then the version is the first entry of
+# changelog.md, and nothing happens if it's already released.
 # A tag created with the GITHUB_TOKEN doesn't trigger the 'push: tags' workflows, so it's dispatched explicitly.
 
 on:
@@ -19,6 +21,9 @@ on:
         description: "Post the image to Zulip"
         type: boolean
         default: false
+  push:
+    branches: [main]
+    paths: [changelog.md]
 
 permissions:
   contents: write
@@ -35,9 +40,24 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check the version
+      - name: Resolve the version
+        id: version
         env:
-          VERSION: ${{ inputs.version }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          VERSION=${INPUT_VERSION:-$(awk 'NF { print $1; exit }' changelog.md)}
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_EVENT_NAME" = "push" ] && git rev-parse -q --verify "refs/tags/$VERSION" > /dev/null; then
+            echo "::notice::$VERSION is already released"
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check the version
+        if: steps.version.outputs.release == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-cibuild[0-9]*)?$ ]]; then
             echo "::error::The version '$VERSION' isn't of the form X.Y.Z or X.Y.Z-cibuildN"
@@ -70,9 +90,10 @@ jobs:
           fi
 
       - name: Extract the release notes from the changelog
+        if: steps.version.outputs.release == 'true'
         env:
-          VERSION: ${{ inputs.version }}
-          GAR: ${{ inputs.gar }}
+          VERSION: ${{ steps.version.outputs.version }}
+          GAR: ${{ inputs.gar || false }}
         run: |
           # The entry is the lines after 'X.Y.Z YYYY/MM/DD' up to the next empty line
           awk 'NR > 1 && NF == 0 { exit } NR > 1 { print }' changelog.md > release-notes.md
@@ -96,8 +117,9 @@ jobs:
           cat release-notes.md
 
       - name: Create the tag and the release
+        if: steps.version.outputs.release == 'true'
         env:
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ steps.version.outputs.version }}
           GH_TOKEN: ${{ github.token }}
         run: |
           PRERELEASE=()
@@ -111,10 +133,11 @@ jobs:
             "${PRERELEASE[@]}"
 
       - name: Start the Docker workflow
+        if: steps.version.outputs.release == 'true'
         env:
-          VERSION: ${{ inputs.version }}
-          GAR: ${{ inputs.gar }}
-          ZULIP: ${{ inputs.zulip }}
+          VERSION: ${{ steps.version.outputs.version }}
+          GAR: ${{ inputs.gar || false }}
+          ZULIP: ${{ inputs.zulip || false }}
           GH_TOKEN: ${{ github.token }}
         run: |
           gh workflow run googleregistry.yml --ref "$VERSION" -f gar="$GAR" -f zulip="$ZULIP"
