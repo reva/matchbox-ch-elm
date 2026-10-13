@@ -7,12 +7,12 @@ hapi:
     implementationguides:
       chelm:
         name: ch.fhir.ig.ch-elm
-        version: 1.15.1
+        version: 1.15.0
         url: file:/ch.fhir.ig.ch-elm.tgz
 matchbox:
   fhir:
     context:
-      igsPreloaded: ch.fhir.ig.ch-elm#1.15.1
+      igsPreloaded: ch.fhir.ig.ch-elm#1.15.0
       #txServer: n/a
       ssrfProtectionEnabled: false
       txServer: http://localhost:${server.port}/matchboxv3/tx
@@ -25,7 +25,7 @@ matchbox:
         ch.fhir.ig.ch-elm:
           - "regex:Binding for path (.+) has no source, so can't be checked"
           - "regex:None of the codings provided are in the value set 'Observation Interpretation Codes'(.*)"
-          - "regex:This element does not match any known slice defined in the profile http://hl7.eu/fhir/laboratory/StructureDefinition/Patient-eu-lab(.+)"    
+          - "regex:This element does not match any known slice defined in the profile http://hl7.eu/fhir/laboratory/StructureDefinition/Patient-eu-lab(.+)"
           - "regex:This element does not match any known slice defined in the profile http://hl7.eu/fhir/laboratory/StructureDefinition/HumanName-eu(.+)"
           - "regex:This element does not match any known slice defined in the profile http://fhir.ch/ig/ch-core/StructureDefinition/ch-core-humanname(.+)"
           - "regex:This element does not match any known slice defined in the profile http://hl7.eu/fhir/laboratory/StructureDefinition/Address-eu(.+)"
