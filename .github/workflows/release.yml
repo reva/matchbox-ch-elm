@@ -11,6 +11,14 @@ on:
         description: "Version to release (e.g. 1.15.6 or 1.16.0-cibuild2). Must be the first entry in changelog.md."
         required: true
         type: string
+      gar:
+        description: "Also push the image to Google Artifact Registry"
+        type: boolean
+        default: true
+      zulip:
+        description: "Post the image to Zulip"
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -64,11 +72,17 @@ jobs:
       - name: Extract the release notes from the changelog
         env:
           VERSION: ${{ inputs.version }}
+          GAR: ${{ inputs.gar }}
         run: |
           # The entry is the lines after 'X.Y.Z YYYY/MM/DD' up to the next empty line
           awk 'NR > 1 && NF == 0 { exit } NR > 1 { print }' changelog.md > release-notes.md
-          printf '\n```\ndocker pull europe-west6-docker.pkg.dev/ahdis-ch/ahdis/matchbox-ch-elm:%s\n```\n' \
-            "$VERSION" >> release-notes.md
+          {
+            printf '\n```\ndocker pull ghcr.io/%s:%s\n' "${GITHUB_REPOSITORY,,}" "$VERSION"
+            if [ "$GAR" = "true" ]; then
+              printf 'docker pull europe-west6-docker.pkg.dev/ahdis-ch/ahdis/matchbox-ch-elm:%s\n' "$VERSION"
+            fi
+            printf '```\n'
+          } >> release-notes.md
           PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD 2> /dev/null || true)
           if [ -n "$PREVIOUS_TAG" ]; then
             printf '\n**Full Changelog**: %s/%s/compare/%s...%s\n' \
@@ -94,6 +108,8 @@ jobs:
       - name: Start the Docker workflow
         env:
           VERSION: ${{ inputs.version }}
+          GAR: ${{ inputs.gar }}
+          ZULIP: ${{ inputs.zulip }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh workflow run googleregistry.yml --ref "$VERSION"
+          gh workflow run build.yml --ref "$VERSION" -f gar="$GAR" -f zulip="$ZULIP"

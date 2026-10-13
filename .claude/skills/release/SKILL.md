@@ -9,7 +9,7 @@ A release is a new combination of a matchbox version (the `FROM` image in `Docke
 (`src/ch.fhir.ig.ch-elm.tgz`). It's a commit on `main` named after the version, then the `Create a release` workflow
 (`.github/workflows/release.yml`), which creates the tag with the bare version (no `v`) and the GitHub release with the
 notes of the version from `changelog.md` (a `-cibuild` version as a pre-release), and starts
-`.github/workflows/googleregistry.yml` on the tag. That builds the image (amd64 and arm64), pushes it as
+`.github/workflows/build.yml` on the tag. That builds the image (amd64 and arm64), pushes it as
 `europe-west6-docker.pkg.dev/ahdis-ch/ahdis/matchbox-ch-elm:<tag>` and posts to Zulip. There is no PR.
 
 The user asking for a release authorizes the whole procedure (commit and push to `main`, release workflow). Stop and
