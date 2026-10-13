@@ -14,10 +14,17 @@ a release is a new combination of matchbox version and ch-elm IG version.
 | `src/ch.fhir.ig.ch-elm.tgz` | the ch-elm IG package that gets installed into the image |
 | `src/application.yaml` | matchbox config; the ch-elm version appears in **two** places (`hapi.fhir.implementationguides.chelm.version` and `matchbox.fhir.context.igsPreloaded`) |
 | `changelog.md` | release history, newest entry first |
-| `.github/workflows/release.yml` | `Create a release`, started by hand with a version: creates the tag and the GitHub release with the notes from `changelog.md`, then starts `googleregistry.yml` on the tag (passing the `gar` and `zulip` options) |
+| `.github/workflows/prepare-release.yml` | `Prepare a release`, weekdays or by hand with specific versions: runs `.github/scripts/prepare-release.sh`, builds the image and opens the release PR from `feat/next-release` |
+| `.github/scripts/prepare-release.sh` | updates `Dockerfile`, the IG package, `src/application.yaml`, `changelog.md` and `README.md` to a new matchbox and/or ch-elm version and picks the release version |
+| `.github/workflows/release.yml` | `Create a release`, on a push to `main` that adds a `changelog.md` entry (or by hand with a version): creates the tag and the GitHub release with the notes from `changelog.md`, then starts `googleregistry.yml` on the tag (passing the `gar` and `zulip` options) |
 | `.github/workflows/googleregistry.yml` | on every pushed tag (or started by `release.yml`), builds the image (amd64 and arm64) and pushes it to `ghcr.io/ahdis/matchbox-ch-elm` as `<tag>` and `<ch-elm>-<matchbox>` (the latter not for `-cibuild` tags); with `gar` also to Google Artifact Registry, with `zulip` posts to Zulip (`#matchbox`) |
 
 ## Release process
 
-The release procedure (version, matchbox and ch-elm update, changelog, release workflow, image build) is in the Claude Code skill
-[`.claude/skills/release/SKILL.md`](.claude/skills/release/SKILL.md). Follow it for a release.
+Releases are made by merging the PR of `prepare-release.yml`; see "how to install a new ch-elm ig or matchbox version"
+in `README.md`. The release version follows the ch-elm version (e.g. ch-elm `1.16.0` → `1.16.0`). A matchbox-only
+update, or a ch-elm version that isn't newer than the last release, increases the patch of the last release
+(`1.15.6` → `1.15.7`). A ch-elm ci-build is a pre-release of that version: `<version>-cibuild`, `-cibuild2`, …
+
+To make a release by hand, edit the files as the script does, add the changelog entry and push to `main`. Don't tag by
+hand. A tag is published at once: don't move or delete it, make a new patch release instead.
