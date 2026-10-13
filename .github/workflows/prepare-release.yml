@@ -1,0 +1,82 @@
+name: Prepare a release
+
+# Looks for a new matchbox release and a new published ch-elm version. If there is one, updates the repository with
+# .github/scripts/prepare-release.sh, checks that the image builds and opens (or updates) the release PR from the
+# branch feat/next-release. Merging the PR to main creates the release (release.yml).
+# Started by hand, it takes specific versions, e.g. a matchbox patch of an older major version or a ch-elm ci-build.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      matchbox:
+        description: "matchbox version (e.g. v4.1.22). Default: the latest release, if newer"
+        type: string
+      chelm:
+        description: "ch-elm version (e.g. 1.16.0) or 'cibuild'. Default: the latest published version, if newer"
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency: prepare-release
+
+env:
+  BRANCH: feat/next-release
+
+jobs:
+  prepare:
+    name: Prepare the release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout the repository
+        uses: actions/checkout@v5
+
+      - name: Update the versions
+        id: prepare
+        env:
+          MATCHBOX: ${{ inputs.matchbox }}
+          CHELM: ${{ inputs.chelm }}
+          GH_TOKEN: ${{ github.token }}
+        run: .github/scripts/prepare-release.sh "$MATCHBOX" "$CHELM"
+
+      - name: Check the release PR
+        id: pr
+        if: steps.prepare.outputs.version
+        env:
+          VERSION: ${{ steps.prepare.outputs.version }}
+        run: |
+          # A scheduled run doesn't push the same release again (only the date of the changelog entry would change)
+          if [ "$GITHUB_EVENT_NAME" = "schedule" ] && git fetch -q origin "$BRANCH" 2> /dev/null &&
+              [ "$(git log -1 --format=%s FETCH_HEAD)" = "$VERSION" ]; then
+            echo "::notice::$BRANCH already has this release"
+            echo "update=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "update=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build the image
+        if: steps.pr.outputs.update == 'true'
+        run: docker build --progress=plain -t matchbox-ch-elm .
+
+      - name: Open the release PR
+        if: steps.pr.outputs.update == 'true'
+        env:
+          VERSION: ${{ steps.prepare.outputs.version }}
+          NOTES: ${{ steps.prepare.outputs.notes }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git commit -a -m "$VERSION"
+          git push --force origin "$BRANCH"
+          BODY=$(printf '%s\n\nMerging this PR creates the release %s.\n' "$NOTES" "$VERSION")
+          if [ "$(gh pr view "$BRANCH" --json state -q .state 2> /dev/null)" = "OPEN" ]; then
+            gh pr edit "$BRANCH" --title "$VERSION" --body "$BODY"
+          else
+            gh pr create --head "$BRANCH" --base main --title "$VERSION" --body "$BODY"
+          fi
