@@ -1,7 +1,19 @@
-name: Build and Upload to Google Artifact registry
+name: Build and publish the image
+
+# Pushes the image to ghcr.io. Google Artifact Registry and the Zulip messages are opt-in (inputs), on a pushed tag
+# they are off.
 
 on:
   workflow_dispatch:
+    inputs:
+      gar:
+        description: "Also push to Google Artifact Registry"
+        type: boolean
+        default: false
+      zulip:
+        description: "Post to Zulip"
+        type: boolean
+        default: false
   push:
     tags:
       - "*"
@@ -21,6 +33,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
+      packages: write
 
     steps:
       - name: Checkout
@@ -35,6 +48,7 @@ jobs:
       # Configure Workload Identity Federation and generate an access token.
       - id: "auth"
         name: "Authenticate to Google Cloud"
+        if: inputs.gar
         uses: "google-github-actions/auth@v1"
         with:
           token_format: "access_token"
@@ -42,14 +56,33 @@ jobs:
           service_account: "github@ahdis-ch.iam.gserviceaccount.com"
 
       - name: Docker configuration
+        if: inputs.gar
         run: |-
           echo ${{steps.auth.outputs.access_token}} | docker login -u oauth2accesstoken --password-stdin https://$GAR_LOCATION-docker.pkg.dev
 
+      - name: Log in to the GitHub Container registry
+        run: |-
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login -u "${{ github.actor }}" --password-stdin ghcr.io
+          echo "GHCR_IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+
       # Build the Docker image for arm and amd
       - name: Build
+        env:
+          GAR: ${{ inputs.gar }}
         run: |-
+          TAGS=(--tag "$GHCR_IMAGE:$GITHUB_REF_NAME")
+          if [ "$GAR" = "true" ]; then
+            TAGS+=(--tag "$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$IMAGE:$GITHUB_REF_NAME")
+          fi
+          # <ch-elm>-<matchbox>, e.g. 1.15.1-4.1.21. Not for ci-builds: their IG has the same version as the published one.
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [[ "$GITHUB_REF_NAME" != *-cibuild* ]]; then
+            MATCHBOX=$(sed -n 's/^FROM .*matchbox:v\([^ ]*\).*/\1/p' Dockerfile)
+            CHELM=$(tar -xOzf src/ch.fhir.ig.ch-elm.tgz package/package.json | jq -r .version)
+            TAGS+=(--tag "$GHCR_IMAGE:$CHELM-$MATCHBOX")
+          fi
           docker buildx build \
-            --tag "$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$IMAGE:$GITHUB_REF_NAME" \
+            "${TAGS[@]}" \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
             --build-arg GITHUB_SHA="$GITHUB_SHA" \
             --build-arg GITHUB_REF="$GITHUB_REF" \
             --push \
@@ -58,6 +91,7 @@ jobs:
             .
       
       - name: Send a stream message to Zulip
+        if: inputs.zulip
         uses: zulip/github-actions-zulip/send-message@v1
         with:
           api-key: ${{ secrets.ZULIPAPIKEY }}
@@ -71,10 +105,11 @@ jobs:
               
               see also https://github.com/ahdis/matchbox-ch-elm/releases/tag/${{ github.ref_name }}
               
-              docker pull ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:${{ github.ref_name }}
+              docker pull ${{ env.GHCR_IMAGE }}:${{ github.ref_name }}
+              ${{ inputs.gar && format('docker pull {0}-docker.pkg.dev/{1}/{2}/{3}:{4}', env.GAR_LOCATION, env.PROJECT_ID, env.REPOSITORY, env.IMAGE, github.ref_name) || '' }}
 
       - name: Send a stream message to Zulip
-        if: failure() 
+        if: failure() && inputs.zulip
         uses: zulip/github-actions-zulip/send-message@v1
         with:
           api-key: ${{ secrets.ZULIPAPIKEY }}
